@@ -5,6 +5,7 @@
 library shelf;
 
 export 'src/handlers/logger.dart';
+export 'src/handlers/router.dart';
 export 'src/middleware.dart';
 export 'src/request.dart';
 export 'src/response.dart';
