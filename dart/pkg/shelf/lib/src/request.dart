@@ -124,12 +124,14 @@ class Request extends Message {
         scriptName != null ? scriptName : this.scriptName, 
         protocolVersion != null ? protocolVersion : this.protocolVersion, 
         requestedUri != null ? requestedUri : this.requestedUri,
-        headersDelta != null ? new pc.UnmodifiableMapView(
-            new NestedMap(headers, headersDelta)) : this.headers,
+        // TODO(kevmoo): insert clever algorithm here ;-)
+        headersDelta != null ? (new HashMap.from(headers)..addAll(headersDelta)) 
+            : this.headers,
         body: (body != null ? body : this.read()),
-        extraParams: (extraParamsDelta != null ? new pc.UnmodifiableMapView(
-            new NestedMap(this.extraParams, extraParamsDelta)) : 
-              this.extraParams));
+        // TODO(kevmoo): insert clever algorithm here ;-)
+        extraParams: (extraParamsDelta != null ? 
+            (new HashMap.from(extraParams)..addAll(extraParamsDelta)) 
+            : this.extraParams));
   }
   
 }
