@@ -6,24 +6,34 @@ library shelf.handlers.router;
 
 import '../handler.dart';
 import '../request.dart';
+import '../response.dart';
 
 
 /// A [Handler] that routes to other handlers based on the incoming request
 /// (path and method). Note there can be several layers of routers to facilitate
-/// modularity
+/// modularity.
+/// 
+/// When the Router routes a request to a handler it adjusts the requests as follows:
+/// * the routes path is removed from the start of the requests pathInfo
+/// * the routes path is added to the end of the requests scriptName
+/// 
+/// e.g if original request had path info of `/banking' and scriptName was
+/// `/abc` then when routing a request of `/banking/accounts` the new request
+/// past to the handler will have a pathInfo of `/accounts` and scriptName of
+/// `/abc/banking`
+/// 
 ///
 Router router() => new Router();
 
 
-//typedef bool Matcher(Request request);
-
 
 class Router {
   final List<_Route> _routes = <_Route>[];
-  final Handler _fallbackHandler;
+  final _Route _fallbackRoute;
   
-  Router([Handler fallbackHandler]) 
-      : this._fallbackHandler = fallbackHandler; // TODO: default to a 404 handler
+  Router([Handler fallbackHandler])
+      : this._fallbackRoute = new _Route(fallbackHandler != null ?
+          fallbackHandler : _send404, null, null);
   
   Router addRoute(Handler handler, {String path, String method}) {
     _routes.add(new _Route(handler, path, method));
@@ -33,8 +43,9 @@ class Router {
   Handler get handler => _handleRequest;
   
   _handleRequest(Request request) {
-    final route = _routes.firstWhere((r) => r.canHandle(request));
-    return route != null ? route.handle(request) : _fallbackHandler(request);
+    final route = _routes.firstWhere((r) => r.canHandle(request), 
+        orElse: () => _fallbackRoute);
+    return route.handle(request) ;
   }
 }
 
@@ -70,3 +81,6 @@ class _Route {
 
 }
 
+Response _send404(Request req) {
+  return new Response.notFound("Not Found");
+}
