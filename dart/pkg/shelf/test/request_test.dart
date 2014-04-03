@@ -147,4 +147,21 @@ void main() {
       }).encoding, equals(LATIN1));
     });
   });
+  
+  group("copyWith", () {
+    test("correctly overrides method", () {
+      expect(_request().copyWith(method: 'PUT').method, equals('PUT'));
+    });
+    
+    test("correctly overrides headers", () {
+      final req = _request({
+              'content-type': 'text/plain; charset=iso-8859-1'
+            }).copyWith(headersDelta: {'content-type': 'fum'});
+      
+      expect(_request({
+        'content-type': 'text/plain; charset=iso-8859-1'
+      }).copyWith(headersDelta: {'content-type': 'fum'})
+      .headers['content-type'], equals('fum'));
+    });
+  });
 }
