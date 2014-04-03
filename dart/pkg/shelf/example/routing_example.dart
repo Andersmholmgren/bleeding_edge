@@ -15,8 +15,8 @@ void main() {
       
   
   var router = shelf.router()
-      .addRoute(publicRoute, path: 'public')
-      .addRoute(bankingRoute, path: 'banking')
+      .addRoute(publicRoute, path: '/public')
+      .addRoute(bankingRoute, path: '/banking')
       .handler;
   
   var handler = const shelf.Stack()

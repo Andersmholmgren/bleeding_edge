@@ -4,19 +4,13 @@
 
 library shelf.handlers.router;
 
-import 'package:stack_trace/stack_trace.dart';
-
-import 'package:path/path.dart' as p;
-
-import '../middleware.dart';
-import '../util.dart';
 import '../handler.dart';
 import '../request.dart';
-import '../stack.dart';
 
 
 /// A [Handler] that routes to other handlers based on the incoming request
-/// (path and method)
+/// (path and method). Note there can be several layers of routers to facilitate
+/// modularity
 ///
 Router router() => new Router();
 
