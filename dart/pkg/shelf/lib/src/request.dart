@@ -13,6 +13,7 @@ import 'package:http_parser/http_parser.dart';
 import 'package:path/path.dart' as p;
 
 import 'message.dart';
+import 'util.dart';
 
 /// Represents an HTTP request to be processed by a Shelf application.
 class Request extends Message {
@@ -68,10 +69,12 @@ class Request extends Message {
 
   Request(this.pathInfo, String queryString, this.method,
       this.scriptName, this.protocolVersion, this.requestedUri,
-      Map<String, String> headers, {Stream<List<int>> body})
+      Map<String, String> headers, {Stream<List<int>> body,
+      Map<String, Object> extraParams})
       : this.queryString = queryString == null ? '' : queryString,
         super(new pc.UnmodifiableMapView(new HashMap.from(headers)),
-            body == null ? new Stream.fromIterable([]) : body) {
+            body == null ? new Stream.fromIterable([]) : body,
+            extraParams) { // TODO: make unmodifiable map view
     if (method.isEmpty) throw new ArgumentError('method cannot be empty.');
 
     if (scriptName.isNotEmpty && !scriptName.startsWith('/')) {
@@ -105,4 +108,28 @@ class Request extends Message {
     }
     return segs;
   }
+
+  /// Creates a copy of the request with optional changes provided.
+  /// For map based fields like [headers] and [extraParams] only deltas should
+  /// be provided. These will take precedence over any existing entries on those
+  /// maps
+  Request copyWith({String pathInfo, String queryString, String method,
+    String scriptName, String protocolVersion, Uri requestedUri,
+    Map<String, String> headersDelta, Stream<List<int>> body,
+    Map<String, Object> extraParamsDelta}) {
+    
+    return new Request(pathInfo != null ? pathInfo : this.pathInfo, 
+        queryString != null ? queryString : this.queryString, 
+        method != null ? method : this.method, 
+        scriptName != null ? scriptName : this.scriptName, 
+        protocolVersion != null ? protocolVersion : this.protocolVersion, 
+        requestedUri != null ? requestedUri : this.requestedUri,
+        headersDelta != null ? new pc.UnmodifiableMapView(
+            new NestedMap(headers, headersDelta)) : this.headers,
+        body: (body != null ? body : this.read()),
+        extraParams: (extraParamsDelta != null ? new pc.UnmodifiableMapView(
+            new NestedMap(this.extraParams, extraParamsDelta)) : 
+              this.extraParams));
+  }
+  
 }

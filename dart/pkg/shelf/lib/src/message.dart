@@ -23,8 +23,17 @@ abstract class Message {
   /// This can be read via [read] or [readAsString].
   final Stream<List<int>> _body;
 
-  Message(UnmodifiableMapView<String, String> headers, this._body)
-      : this.headers = headers;
+  /// Extra parameters for handlers to pass data to downstream handlers
+  /// TODO: less sucky name
+  ///
+  /// The value is immutable.
+  final Map<String, Object> extraParams;
+
+
+  Message(UnmodifiableMapView<String, String> headers, this._body,
+          [ UnmodifiableMapView<String, Object> extraParams ])
+      : this.headers = headers,
+        this.extraParams = extraParams;
 
   /// The contents of the content-length field in [headers].
   ///
