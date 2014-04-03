@@ -108,4 +108,28 @@ class Request extends Message {
     }
     return segs;
   }
+
+  /// Creates a copy of the request with optional changes provided.
+  /// For map based fields like [headers] and [extraParams] only deltas should
+  /// be provided. These will take precedence over any existing entries on those
+  /// maps
+  Request copyWith({String pathInfo, String queryString, String method,
+    String scriptName, String protocolVersion, Uri requestedUri,
+    Map<String, String> headersDelta, Stream<List<int>> body,
+    Map<String, Object> extraParamsDelta}) {
+    
+    return new Request(pathInfo != null ? pathInfo : this.pathInfo, 
+        queryString != null ? queryString : this.queryString, 
+        method != null ? method : this.method, 
+        scriptName != null ? scriptName : this.scriptName, 
+        protocolVersion != null ? protocolVersion : this.protocolVersion, 
+        requestedUri != null ? requestedUri : this.requestedUri,
+        headersDelta != null ? new pc.UnmodifiableMapView(
+            new NestedMap(headers, headersDelta)) : this.headers,
+        body: (body != null ? body : this.read()),
+        extraParams: (extraParamsDelta != null ? new pc.UnmodifiableMapView(
+            new NestedMap(this.extraParams, extraParamsDelta)) : 
+              this.extraParams));
+  }
+  
 }
