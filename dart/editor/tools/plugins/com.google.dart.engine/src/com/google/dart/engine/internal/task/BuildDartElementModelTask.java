@@ -11,7 +11,7 @@
  * or implied. See the License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.google.dart.engine.internal.resolver;
+package com.google.dart.engine.internal.task;
 
 import com.google.dart.engine.ast.Combinator;
 import com.google.dart.engine.ast.CompilationUnit;
@@ -24,6 +24,7 @@ import com.google.dart.engine.ast.NodeList;
 import com.google.dart.engine.ast.ShowCombinator;
 import com.google.dart.engine.ast.SimpleIdentifier;
 import com.google.dart.engine.ast.StringLiteral;
+import com.google.dart.engine.context.AnalysisContext;
 import com.google.dart.engine.context.AnalysisException;
 import com.google.dart.engine.element.Element;
 import com.google.dart.engine.element.ExportElement;
@@ -32,11 +33,7 @@ import com.google.dart.engine.element.ImportElement;
 import com.google.dart.engine.element.LibraryElement;
 import com.google.dart.engine.element.NamespaceCombinator;
 import com.google.dart.engine.error.AnalysisError;
-import com.google.dart.engine.error.AnalysisErrorListener;
 import com.google.dart.engine.error.CompileTimeErrorCode;
-import com.google.dart.engine.internal.builder.AngularCompilationUnitBuilder;
-import com.google.dart.engine.internal.builder.PolymerCompilationUnitBuilder;
-import com.google.dart.engine.internal.constant.ConstantValueComputer;
 import com.google.dart.engine.internal.context.InternalAnalysisContext;
 import com.google.dart.engine.internal.context.PerformanceStatistics;
 import com.google.dart.engine.internal.context.RecordingErrorListener;
@@ -47,6 +44,11 @@ import com.google.dart.engine.internal.element.ImportElementImpl;
 import com.google.dart.engine.internal.element.LibraryElementImpl;
 import com.google.dart.engine.internal.element.PrefixElementImpl;
 import com.google.dart.engine.internal.element.ShowElementCombinatorImpl;
+import com.google.dart.engine.internal.resolver.LibraryElementBuilder;
+import com.google.dart.engine.internal.resolver.ResolvableLibrary;
+import com.google.dart.engine.internal.resolver.TypeProvider;
+import com.google.dart.engine.internal.resolver.TypeProviderImpl;
+import com.google.dart.engine.internal.resolver.TypeResolverVisitor;
 import com.google.dart.engine.internal.scope.Namespace;
 import com.google.dart.engine.internal.scope.NamespaceBuilder;
 import com.google.dart.engine.sdk.DartSdk;
@@ -62,21 +64,22 @@ import java.util.HashMap;
 import java.util.List;
 
 /**
- * Instances of the class {@code LibraryResolver} are used to resolve one or more mutually dependent
- * libraries within a single context.
- * 
- * @coverage dart.engine.resolver
+ * Instances of the class {@code BuildDartElementModelTask} build the element models for all of the
+ * libraries in a cycle.
  */
-public class LibraryResolver2 {
+public class BuildDartElementModelTask extends AnalysisTask {
   /**
-   * The analysis context in which the libraries are being analyzed.
+   * The library for which an element model was originally requested.
    */
-  private InternalAnalysisContext analysisContext;
+  private Source targetLibrary;
 
   /**
-   * The listener to which analysis errors will be reported, this error listener is either
-   * references {@link #recordingErrorListener}, or it unions the passed
-   * {@link AnalysisErrorListener} with the {@link #recordingErrorListener}.
+   * The libraries that are part of the cycle to be resolved.
+   */
+  private List<ResolvableLibrary> librariesInCycle;
+
+  /**
+   * The listener to which analysis errors will be reported.
    */
   private RecordingErrorListener errorListener;
 
@@ -91,134 +94,104 @@ public class LibraryResolver2 {
   private ResolvableLibrary coreLibrary;
 
   /**
-   * The object used to access the types from the core library.
-   */
-  private TypeProvider typeProvider;
-
-  /**
    * A table mapping library sources to the information being maintained for those libraries.
    */
   private HashMap<Source, ResolvableLibrary> libraryMap = new HashMap<Source, ResolvableLibrary>();
 
   /**
-   * A collection containing the libraries that are being resolved together.
-   */
-  private List<ResolvableLibrary> librariesInCycle;
-
-  /**
-   * Initialize a newly created library resolver to resolve libraries within the given context.
+   * Initialize a newly created task to perform analysis within the given context.
    * 
-   * @param analysisContext the analysis context in which the library is being analyzed
+   * @param context the context in which the task is to be performed
+   * @param targetLibrary the library for which an element model was originally requested
+   * @param librariesInCycle the libraries that are part of the cycle to be resolved
    */
-  public LibraryResolver2(InternalAnalysisContext analysisContext) {
-    this.analysisContext = analysisContext;
+  public BuildDartElementModelTask(InternalAnalysisContext context, Source targetLibrary,
+      List<ResolvableLibrary> librariesInCycle) {
+    super(context);
+    this.librariesInCycle = librariesInCycle;
     this.errorListener = new RecordingErrorListener();
-    coreLibrarySource = analysisContext.getSourceFactory().forUri(DartSdk.DART_CORE);
+    coreLibrarySource = context.getSourceFactory().forUri(DartSdk.DART_CORE);
+  }
+
+  @Override
+  public <E> E accept(AnalysisTaskVisitor<E> visitor) throws AnalysisException {
+    return visitor.visitBuildDartElementModelTask(this);
   }
 
   /**
-   * Return the analysis context in which the libraries are being analyzed.
+   * Return the listener to which analysis errors were (or will be) reported.
    * 
-   * @return the analysis context in which the libraries are being analyzed
-   */
-  public InternalAnalysisContext getAnalysisContext() {
-    return analysisContext;
-  }
-
-  /**
-   * Return the listener to which analysis errors will be reported.
-   * 
-   * @return the listener to which analysis errors will be reported
+   * @return the listener to which analysis errors were reported
    */
   public RecordingErrorListener getErrorListener() {
     return errorListener;
   }
 
   /**
-   * Return an array containing information about all of the libraries that were resolved.
+   * Return the libraries that are part of the cycle to be resolved.
    * 
-   * @return an array containing the libraries that were resolved
+   * @return the libraries that are part of the cycle to be resolved
    */
-  public List<ResolvableLibrary> getResolvedLibraries() {
+  public List<ResolvableLibrary> getLibrariesInCycle() {
     return librariesInCycle;
   }
 
   /**
-   * Resolve the library specified by the given source in the given context.
-   * <p>
-   * Note that because Dart allows circular imports between libraries, it is possible that more than
-   * one library will need to be resolved. In such cases the error listener can receive errors from
-   * multiple libraries.
+   * Return the library for which an element model was originally requested.
    * 
-   * @param librarySource the source specifying the defining compilation unit of the library to be
-   *          resolved
-   * @param fullAnalysis {@code true} if a full analysis should be performed
-   * @return the element representing the resolved library
-   * @throws AnalysisException if the library could not be resolved for some reason
+   * @return the library for which an element model was originally requested
    */
-  public LibraryElement resolveLibrary(Source librarySource,
-      List<ResolvableLibrary> librariesInCycle) throws AnalysisException {
+  public Source getTargetLibrary() {
+    return targetLibrary;
+  }
+
+  @Override
+  protected String getTaskDescription() {
+    Source librarySource = librariesInCycle.get(0).getLibrarySource();
+    if (librarySource == null) {
+      return "build an element model for unknown library";
+    }
+    return "build an element model for " + librarySource.getFullName();
+  }
+
+  @Override
+  protected void internalPerform() throws AnalysisException {
     InstrumentationBuilder instrumentation = Instrumentation.builder("dart.engine.LibraryResolver.resolveLibrary");
     try {
-      instrumentation.data("fullName", librarySource.getFullName());
       //
       // Build the map of libraries that are known.
       //
-      this.librariesInCycle = librariesInCycle;
       libraryMap = buildLibraryMap();
-      ResolvableLibrary targetLibrary = libraryMap.get(librarySource);
       coreLibrary = libraryMap.get(coreLibrarySource);
-      instrumentation.metric("buildLibraryMap", "complete");
-      //
-      // Build the element models representing the libraries being resolved. This is done in three
-      // steps:
-      //
-      // 1. Build the basic element models without making any connections between elements other than
-      //    the basic parent/child relationships. This includes building the elements representing the
-      //    libraries.
-      // 2. Build the elements for the import and export directives. This requires that we have the
-      //    elements built for the referenced libraries, but because of the possibility of circular
-      //    references needs to happen after all of the library elements have been created.
-      // 3. Build the rest of the type model by connecting superclasses, mixins, and interfaces. This
-      //    requires that we be able to compute the names visible in the libraries being resolved,
-      //    which in turn requires that we have resolved the import directives.
-      //
-      buildElementModels();
-      instrumentation.metric("buildElementModels", "complete");
       LibraryElement coreElement = coreLibrary.getLibraryElement();
       if (coreElement == null) {
         throw new AnalysisException("Could not resolve dart:core");
       }
+      instrumentation.metric("buildLibraryMap", "complete");
+      //
+      // Build the element models representing the libraries being resolved. This is done in three
+      // steps.
+      //
+      // 1. Build the basic element models without making any connections between elements other than
+      //    the basic parent/child relationships. This includes building the elements representing the
+      //    libraries.
+      //
+      buildElementModels();
+      instrumentation.metric("buildElementModels", "complete");
+      //
+      // 2. Build the elements for the import and export directives. This requires that we have the
+      //    elements built for the referenced libraries, but because of the possibility of circular
+      //    references needs to happen after all of the library elements have been created.
+      //
       buildDirectiveModels();
       instrumentation.metric("buildDirectiveModels", "complete");
-      typeProvider = new TypeProviderImpl(coreElement);
-      buildTypeHierarchies();
+      //
+      // 3. Build the rest of the type model by connecting superclasses, mixins, and interfaces. This
+      //    requires that we be able to compute the names visible in the libraries being resolved,
+      //    which in turn requires that we have resolved the import directives.
+      //
+      buildTypeHierarchies(new TypeProviderImpl(coreElement));
       instrumentation.metric("buildTypeHierarchies", "complete");
-      //
-      // Perform resolution and type analysis.
-      //
-      // TODO(brianwilkerson) Decide whether we want to resolve all of the libraries or whether we
-      // want to only resolve the target library. The advantage to resolving everything is that we
-      // have already done part of the work so we'll avoid duplicated effort. The disadvantage of
-      // resolving everything is that we might do extra work that we don't really care about. Another
-      // possibility is to add a parameter to this method and punt the decision to the clients.
-      //
-      //if (analyzeAll) {
-      resolveReferencesAndTypes();
-      instrumentation.metric("resolveReferencesAndTypes", "complete");
-      //} else {
-      //  resolveReferencesAndTypes(targetLibrary);
-      //}
-      performConstantEvaluation();
-      instrumentation.metric("performConstantEvaluation", "complete");
-      instrumentation.metric("librariesInCycles", librariesInCycle.size());
-      for (ResolvableLibrary lib : librariesInCycle) {
-        instrumentation.metric(
-            "librariesInCycles-CompilationUnitSources-Size",
-            lib.getCompilationUnitSources().length);
-      }
-
-      return targetLibrary.getLibraryElement();
     } finally {
       instrumentation.log();
     }
@@ -230,7 +203,6 @@ public class LibraryResolver2 {
    * @param directive the directive that declares the combinators
    * @return an array containing the import combinators that were built
    */
-  // TODO(brianwilkerson) Move with buildDirectiveModels().
   private NamespaceCombinator[] buildCombinators(NamespaceDirective directive) {
     ArrayList<NamespaceCombinator> combinators = new ArrayList<NamespaceCombinator>();
     for (Combinator combinator : directive.getCombinators()) {
@@ -256,8 +228,8 @@ public class LibraryResolver2 {
    * @throws AnalysisException if the defining compilation unit for any of the libraries could not
    *           be accessed
    */
-  // TODO(brianwilkerson) The body of this method probably wants to be moved into a separate class.
   private void buildDirectiveModels() throws AnalysisException {
+    AnalysisContext analysisContext = getContext();
     for (ResolvableLibrary library : librariesInCycle) {
       HashMap<String, PrefixElementImpl> nameToPrefixMap = new HashMap<String, PrefixElementImpl>();
       ArrayList<ImportElement> imports = new ArrayList<ImportElement>();
@@ -281,7 +253,6 @@ public class LibraryResolver2 {
                 importElement.setUriEnd(uriLiteral.getEnd());
               }
               importElement.setUri(uriContent);
-              importElement.setDeferred(importDirective.getDeferredToken() != null);
               importElement.setCombinators(buildCombinators(importDirective));
               LibraryElement importedLibraryElement = importedLibrary.getLibraryElement();
               if (importedLibraryElement != null) {
@@ -373,14 +344,17 @@ public class LibraryResolver2 {
    */
   private void buildElementModels() throws AnalysisException {
     for (ResolvableLibrary library : librariesInCycle) {
-      LibraryElementBuilder builder = new LibraryElementBuilder(
-          getAnalysisContext(),
-          getErrorListener());
+      LibraryElementBuilder builder = new LibraryElementBuilder(getContext(), errorListener);
       LibraryElementImpl libraryElement = builder.buildLibrary(library);
       library.setLibraryElement(libraryElement);
     }
   }
 
+  /**
+   * Build a table mapping library sources to the resolvable libraries representing those libraries.
+   * 
+   * @return the map that was built
+   */
   private HashMap<Source, ResolvableLibrary> buildLibraryMap() {
     HashMap<Source, ResolvableLibrary> libraryMap = new HashMap<Source, ResolvableLibrary>();
     int libraryCount = librariesInCycle.size();
@@ -405,7 +379,7 @@ public class LibraryResolver2 {
    * 
    * @throws AnalysisException if any of the type hierarchies could not be resolved
    */
-  private void buildTypeHierarchies() throws AnalysisException {
+  private void buildTypeHierarchies(TypeProvider typeProvider) throws AnalysisException {
     TimeCounterHandle timeCounter = PerformanceStatistics.resolve.start();
     try {
       for (ResolvableLibrary library : librariesInCycle) {
@@ -427,7 +401,6 @@ public class LibraryResolver2 {
    * @param names the AST nodes representing the identifiers
    * @return the lexical identifiers associated with the nodes in the list
    */
-  // TODO(brianwilkerson) Move with buildDirectiveModels().
   private String[] getIdentifiers(NodeList<SimpleIdentifier> names) {
     int count = names.size();
     String[] identifiers = new String[count];
@@ -435,87 +408,5 @@ public class LibraryResolver2 {
       identifiers[i] = names.get(i).getName();
     }
     return identifiers;
-  }
-
-  /**
-   * Compute a value for all of the constants in the libraries being analyzed.
-   */
-  private void performConstantEvaluation() {
-    TimeCounterHandle timeCounter = PerformanceStatistics.resolve.start();
-    try {
-      ConstantValueComputer computer = new ConstantValueComputer(typeProvider);
-      for (ResolvableLibrary library : librariesInCycle) {
-        for (ResolvableCompilationUnit unit : library.getResolvableCompilationUnits()) {
-          CompilationUnit ast = unit.getCompilationUnit();
-          if (ast != null) {
-            computer.add(ast);
-          }
-        }
-      }
-      computer.computeValues();
-    } finally {
-      timeCounter.stop();
-    }
-  }
-
-  /**
-   * Resolve the identifiers and perform type analysis in the libraries in the current cycle.
-   * 
-   * @throws AnalysisException if any of the identifiers could not be resolved or if any of the
-   *           libraries could not have their types analyzed
-   */
-  private void resolveReferencesAndTypes() throws AnalysisException {
-    for (ResolvableLibrary library : librariesInCycle) {
-      resolveReferencesAndTypesInLibrary(library);
-    }
-  }
-
-  /**
-   * Resolve the identifiers and perform type analysis in the given library.
-   * 
-   * @param library the library to be resolved
-   * @throws AnalysisException if any of the identifiers could not be resolved or if the types in
-   *           the library cannot be analyzed
-   */
-  private void resolveReferencesAndTypesInLibrary(ResolvableLibrary library)
-      throws AnalysisException {
-    TimeCounterHandle timeCounter = PerformanceStatistics.resolve.start();
-    try {
-      for (ResolvableCompilationUnit unit : library.getResolvableCompilationUnits()) {
-        Source source = unit.getSource();
-        CompilationUnit ast = unit.getCompilationUnit();
-        ast.accept(new VariableResolverVisitor(library, source, typeProvider));
-        ResolverVisitor visitor = new ResolverVisitor(library, source, typeProvider);
-        ast.accept(visitor);
-        for (ProxyConditionalAnalysisError conditionalCode : visitor.getProxyConditionalAnalysisErrors()) {
-          if (conditionalCode.shouldIncludeErrorCode()) {
-            visitor.reportError(conditionalCode.getAnalysisError());
-          }
-        }
-      }
-    } finally {
-      timeCounter.stop();
-    }
-    // Angular
-    timeCounter = PerformanceStatistics.angular.start();
-    try {
-      for (ResolvableCompilationUnit unit : library.getResolvableCompilationUnits()) {
-        Source source = unit.getSource();
-        CompilationUnit ast = unit.getCompilationUnit();
-        new AngularCompilationUnitBuilder(errorListener, source, ast).build();
-      }
-    } finally {
-      timeCounter.stop();
-    }
-    // Polymer
-    timeCounter = PerformanceStatistics.polymer.start();
-    try {
-      for (Source source : library.getCompilationUnitSources()) {
-        CompilationUnit ast = library.getAST(source);
-        new PolymerCompilationUnitBuilder(ast).build();
-      }
-    } finally {
-      timeCounter.stop();
-    }
   }
 }

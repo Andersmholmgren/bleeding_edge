@@ -1287,6 +1287,19 @@ public class NonErrorResolverTest extends ResolverTestCase {
     verify(source);
   }
 
+  public void test_importDeferredLibraryWithLoadFunction() throws Exception {
+    addNamedSource("/lib1.dart", createSource(//
+        "library lib1;",
+        "f() {}"));
+    Source source = addSource(createSource(//
+        "library root;",
+        "import 'lib1.dart' deferred as lib1;",
+        "main() { lib1.f(); }"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
   public void test_importDuplicatedLibraryName() throws Exception {
     Source source = addSource(createSource(//
         "library test;",
@@ -1434,6 +1447,57 @@ public class NonErrorResolverTest extends ResolverTestCase {
         "}",
         "class C<E> implements A<E>, B<E> {",
         "  x(E e) {}",
+        "}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_inconsistentMethodInheritance_overrideTrumpsInherits_getter() throws Exception {
+    // 16134
+    Source source = addSource(createSource(//
+        "class B<S> {",
+        "  S get g => null;",
+        "}",
+        "abstract class I<U> {",
+        "  U get g => null;",
+        "}",
+        "class C extends B<double> implements I<int> {",
+        "  num get g => null;",
+        "}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_inconsistentMethodInheritance_overrideTrumpsInherits_method() throws Exception {
+    // 16134
+    Source source = addSource(createSource(//
+        "class B<S> {",
+        "  m(S s) => null;",
+        "}",
+        "abstract class I<U> {",
+        "  m(U u) => null;",
+        "}",
+        "class C extends B<double> implements I<int> {",
+        "  m(num n) => null;",
+        "}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_inconsistentMethodInheritance_overrideTrumpsInherits_setter() throws Exception {
+    // 16134
+    Source source = addSource(createSource(//
+        "class B<S> {",
+        "  set t(S s) {}",
+        "}",
+        "abstract class I<U> {",
+        "  set t(U u) {}",
+        "}",
+        "class C extends B<double> implements I<int> {",
+        "  set t(num n) {}",
         "}"));
     resolve(source);
     assertNoErrors(source);
@@ -3278,6 +3342,27 @@ public class NonErrorResolverTest extends ResolverTestCase {
         "class _InvertedCodec<T2, S2> extends Codec<T2, S2> {",
         "  _InvertedCodec(Codec<S2, T2> codec);",
         "}"));
+    resolve(source);
+    assertNoErrors(source);
+    verify(source);
+  }
+
+  public void test_sharedDeferredPrefix() throws Exception {
+    addNamedSource("/lib1.dart", createSource(//
+        "library lib1;",
+        "f1() {}"));
+    addNamedSource("/lib2.dart", createSource(//
+        "library lib2;",
+        "f2() {}"));
+    addNamedSource("/lib3.dart", createSource(//
+        "library lib3;",
+        "f3() {}"));
+    Source source = addSource(createSource(//
+        "library root;",
+        "import 'lib1.dart' deferred as lib1;",
+        "import 'lib2.dart' as lib;",
+        "import 'lib3.dart' as lib;",
+        "main() { lib1.f1(); lib.f2(); lib.f3(); }"));
     resolve(source);
     assertNoErrors(source);
     verify(source);

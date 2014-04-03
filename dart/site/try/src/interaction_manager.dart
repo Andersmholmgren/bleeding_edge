@@ -50,6 +50,9 @@ import 'html_to_text.dart' show
 import 'compilation_unit.dart' show
     CompilationUnit;
 
+import 'selection.dart' show
+    TrySelection;
+
 import 'editor.dart' as editor;
 
 import 'mock.dart' as mock;
@@ -134,8 +137,16 @@ class InteractionContext extends InteractionManager {
 }
 
 abstract class InteractionState implements InteractionManager {
+  InteractionContext get context;
+
+  void set state(InteractionState newState);
+
   void onStateChanged(InteractionState previous) {
     print('State change ${previous.runtimeType} -> ${runtimeType}.');
+  }
+
+  void transitionToInitialState() {
+    state = new InitialState(context);
   }
 }
 
@@ -199,15 +210,15 @@ class InitialState extends InteractionState {
   void onMutation(List<MutationRecord> mutations, MutationObserver observer) {
     print('onMutation');
 
-    for (String query in const ['a.diagnostic>span',
-                                '.dart-code-completion',
-                                '.hazed-suggestion']) {
-      for (Element element in mainEditorPane.querySelectorAll(query)) {
-        element.remove();
-      }
+    List<Node> highlighting = mainEditorPane.querySelectorAll(
+        'a.diagnostic>span, .dart-code-completion, .hazed-suggestion');
+    for (Element element in highlighting) {
+      element.remove();
     }
 
     Selection selection = window.getSelection();
+    Node anchorNode = selection.anchorNode;
+    int anchorOffset = selection.isCollapsed ? selection.anchorOffset : -1;
 
     for (MutationRecord record in mutations) {
       if (record.addedNodes.isEmpty) continue;
@@ -218,100 +229,59 @@ class InitialState extends InteractionState {
         Text newNode = new Text('$buffer');
         node.replaceWith(newNode);
         if (selectionOffset != -1) {
-          selection.collapse(newNode, selectionOffset);
+          anchorNode = newNode;
+          anchorOffset = selectionOffset;
         }
       }
-    }
-
-    if (!mainEditorPane.nodes.isEmpty && mainEditorPane.nodes.last is Text) {
-      Text text = mainEditorPane.nodes.last;
-      if (!text.text.endsWith('\n')) {
-        text.appendData('\n');
-      }
-    }
-
-    int offset = 0;
-    int anchorOffset = 0;
-    bool hasSelection = false;
-    Node anchorNode = selection.anchorNode;
-    // TODO(ahe): Try to share walk4 methods.
-    void walk4(Node node) {
-      // TODO(ahe): Use TreeWalker when that is exposed.
-      // function textNodesUnder(root){
-      //   var n, a=[], walk=document.createTreeWalker(
-      //       root,NodeFilter.SHOW_TEXT,null,false);
-      //   while(n=walk.nextNode()) a.push(n);
-      //   return a;
-      // }
-      int type = node.nodeType;
-      if (type == Node.TEXT_NODE || type == Node.CDATA_SECTION_NODE) {
-        CharacterData text = node;
-        if (anchorNode == node) {
-          hasSelection = true;
-          anchorOffset = selection.anchorOffset + offset;
-          return;
-        }
-        offset += text.length;
-      }
-
-      var child = node.firstChild;
-      while (child != null) {
-        walk4(child);
-        if (hasSelection) return;
-        child = child.nextNode;
-      }
-    }
-    if (selection.isCollapsed) {
-      walk4(mainEditorPane);
     }
 
     String currentText = mainEditorPane.text;
+    TrySelection trySelection =
+        new TrySelection(mainEditorPane, selection, currentText);
+
     context.currentCompilationUnit.content = currentText;
-    mainEditorPane.nodes.clear();
-    mainEditorPane.appendText(currentText);
-    if (hasSelection) {
-      selection.collapse(mainEditorPane.firstChild, anchorOffset);
-    }
+
+    editor.seenIdentifiers = new Set<String>.from(mock.identifiers);
 
     editor.isMalformedInput = false;
-    for (var n in new List.from(mainEditorPane.nodes)) {
-      if (n is! Text) continue;
-      Text node = n;
-      String text = node.text;
+    int offset = 0;
+    List<Node> nodes = <Node>[];
+    //   + offset  + charOffset  + globalOffset   + (charOffset + charCount)
+    //   v         v             v                v
+    // do          identifier_abcdefghijklmnopqrst
+    for (Token token = tokenize(currentText);
+         token.kind != EOF_TOKEN;
+         token = token.next) {
+      int charOffset = token.charOffset;
+      int charCount = token.charCount;
 
-      Token token = tokenize(text);
-      int offset = 0;
-      editor.seenIdentifiers = new Set<String>.from(mock.identifiers);
-      for (; token.kind != EOF_TOKEN; token = token.next) {
-        Decoration decoration = editor.getDecoration(token);
-        if (decoration == null) continue;
-        bool hasSelection = false;
-        int selectionOffset = selection.anchorOffset;
+      if (charOffset < offset) continue; // Happens for scanner errors.
 
-        if (selection.isCollapsed && selection.anchorNode == node) {
-          hasSelection = true;
-          selectionOffset = selection.anchorOffset;
-        }
-        int splitPoint = token.charOffset - offset;
-        if (splitPoint < 0) continue; // Happens for scanner errors.
-        Text str = node.splitText(splitPoint);
-        Text after = str.splitText(token.charCount);
-        offset += splitPoint + token.charCount;
-        mainEditorPane.insertBefore(after, node.nextNode);
-        mainEditorPane.insertBefore(decoration.applyTo(str), after);
+      Decoration decoration = editor.getDecoration(token);
+      if (decoration == null) continue;
 
-        if (hasSelection && selectionOffset > node.length) {
-          selectionOffset -= node.length;
-          if (selectionOffset > str.length) {
-            selectionOffset -= str.length;
-            selection.collapse(after, selectionOffset);
-          } else {
-            selection.collapse(str, selectionOffset);
-          }
-        }
-        node = after;
-      }
+      // Add a node for text before current token.
+      trySelection.addNodeFromSubstring(offset, charOffset, nodes);
+
+      // Add a node for current token.
+      trySelection.addNodeFromSubstring(
+          charOffset, charOffset + charCount, nodes, decoration);
+
+      offset = charOffset + charCount;
     }
+
+    // Add a node for anything after the last (decorated) token.
+    trySelection.addNodeFromSubstring(offset, currentText.length, nodes);
+
+    // Ensure text always ends with a newline.
+    if (!currentText.endsWith('\n')) {
+      nodes.add(new Text('\n'));
+    }
+
+    mainEditorPane
+        ..nodes.clear()
+        ..nodes.addAll(nodes);
+    trySelection.adjust(selection);
 
     // Discard highlighting mutations.
     observer.takeRecords();
@@ -328,15 +298,33 @@ class InitialState extends InteractionState {
   void onCompilationUnitChanged(CompilationUnit unit) {
     if (unit == context.currentCompilationUnit) {
       currentSource = unit.content;
-      print('Saved source');
+      print("Saved source of '${unit.name}'");
+      if (context.projectFiles.containsKey(unit.name)) {
+        postProjectFileUpdate(unit);
+      }
       scheduleCompilation();
     } else {
       print("Unexpected change to compilation unit '${unit.name}'.");
     }
   }
 
+  void postProjectFileUpdate(CompilationUnit unit) {
+    onError(ProgressEvent event) {
+      HttpRequest request = event.target;
+      window.alert("Couldn't save '${unit.name}': ${request.responseText}");
+    }
+    new HttpRequest()
+        ..open("POST", "/project/${unit.name}")
+        ..onError.listen(onError)
+        ..send(unit.content);
+  }
+
   Future<List<String>> projectFileNames() {
     return getString('project?list').then((String response) {
+      WebSocket socket = new WebSocket('ws://127.0.0.1:9090/ws/watch');
+      socket.onMessage.listen((MessageEvent e) {
+        print(e.data);
+      });
       return new List<String>.from(JSON.decode(response));
     });
   }
@@ -350,6 +338,8 @@ class InitialState extends InteractionState {
     if (unit != null) {
       // This project file had been fetched already.
       future = new Future<CompilationUnit>.value(unit);
+
+      // TODO(ahe): Probably better to fetch the sources again.
     } else {
       // This project file has to be fetched.
       future = getString('project/$projectFile').then((String text) {
@@ -358,6 +348,10 @@ class InitialState extends InteractionState {
           // Only create a new unit if the value hadn't arrived already.
           unit = new CompilationUnit(projectFile, text);
           context.projectFiles[projectFile] = unit;
+        } else {
+          // TODO(ahe): Probably better to overwrite sources. Create a new
+          // unit?
+          // The server should push updates to the client.
         }
         return unit;
       });
@@ -368,10 +362,15 @@ class InitialState extends InteractionState {
           ..nodes.clear();
       observer.takeRecords(); // Discard mutations.
 
+      transitionToInitialState();
+      context.currentCompilationUnit = unit;
+
       // Install the code, which will trigger a call to onMutation.
       mainEditorPane.appendText(unit.content);
     });
   }
+
+  void transitionToInitialState() {}
 }
 
 Future<String> getString(uri) {
@@ -658,6 +657,10 @@ class CodeCompletionState extends InitialState {
     return new DivElement()
         ..classes.add('dart-entry')
         ..appendText(completion);
+  }
+
+  void transitionToInitialState() {
+    endCompletion();
   }
 }
 
