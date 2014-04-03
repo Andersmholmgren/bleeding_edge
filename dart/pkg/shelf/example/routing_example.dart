@@ -9,14 +9,10 @@ void main() {
   var publicRoute = const shelf.Stack()
       .addHandler(_echoRequest);
 
-  var bankingRoute = const shelf.Stack()
-//      .addMiddleware(authenticator);
-      .addHandler(_echoRequest);
-      
   
   var router = shelf.router()
       .addRoute(publicRoute, path: '/public')
-      .addRoute(bankingRoute, path: '/banking')
+      .addRoute(_bankingRoutes(), path: '/banking')
       .handler;
   
   var handler = const shelf.Stack()
@@ -30,4 +26,25 @@ void main() {
 
 shelf.Response _echoRequest(shelf.Request request) {
   return new shelf.Response.ok('Request for "${request.pathInfo}"');
+}
+
+// supports modularity with routes. i.e. here the banking section has it's own routes
+// these are relative to where the main router places them
+shelf.Handler _bankingRoutes() {
+  var accountsRoute = const shelf.Stack()
+      .addHandler(_echoRequest);
+
+  var transfersRoute = const shelf.Stack()
+      .addHandler(_echoRequest);
+
+  var bankingRouter = shelf.router()
+      .addRoute(accountsRoute, path: '/accounts')
+      .addRoute(transfersRoute, path: '/transfers')
+      .handler;
+  
+  var bankingRoute = const shelf.Stack()
+//      .addMiddleware(authenticator); // obviously they would be authenticated
+      .addHandler(bankingRouter);
+
+  return bankingRoute;
 }
