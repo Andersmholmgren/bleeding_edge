@@ -13,7 +13,6 @@ import 'package:http_parser/http_parser.dart';
 import 'package:path/path.dart' as p;
 
 import 'message.dart';
-import 'util.dart';
 
 /// Represents an HTTP request to be processed by a Shelf application.
 class Request extends Message {
