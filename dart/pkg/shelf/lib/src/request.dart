@@ -68,10 +68,13 @@ class Request extends Message {
 
   Request(this.pathInfo, String queryString, this.method,
       this.scriptName, this.protocolVersion, this.requestedUri,
-      Map<String, String> headers, {Stream<List<int>> body})
+      Map<String, String> headers, {Stream<List<int>> body,
+      Map<String, Object> extraParams})
       : this.queryString = queryString == null ? '' : queryString,
         super(new pc.UnmodifiableMapView(new HashMap.from(headers)),
-            body == null ? new Stream.fromIterable([]) : body) {
+            body == null ? new Stream.fromIterable([]) : body,
+            new pc.UnmodifiableMapView(new HashMap.from(
+                extraParams != null ? extraParams: {}))) {
     if (method.isEmpty) throw new ArgumentError('method cannot be empty.');
 
     if (scriptName.isNotEmpty && !scriptName.startsWith('/')) {
