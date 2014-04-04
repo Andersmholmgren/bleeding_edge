@@ -31,13 +31,20 @@ class Router {
   final List<_Route> _routes = <_Route>[];
   final _Route _fallbackRoute;
   
+  Router._internal(this._fallbackRoute);
+
   Router([Handler fallbackHandler])
       : this._fallbackRoute = new _Route(fallbackHandler != null ?
           fallbackHandler : _send404, null, null);
   
-  Router addRoute(Handler handler, {String path, String method}) {
+  void addRoute(Handler handler, {String path, String method}) {
     _routes.add(new _Route(handler, path, method));
-    return this;
+  }
+  
+  Router addChildRouter(String path) {
+    final child = new Router._internal(_fallbackRoute);
+    addRoute(child.handler, path: path);
+    return child;
   }
   
   Handler get handler => _handleRequest;

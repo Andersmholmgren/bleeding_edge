@@ -10,9 +10,9 @@ void main() {
       .addHandler(_echoRequest);
 
   
-  var router = shelf.router()
-      .addRoute(publicRoute, path: '/public')
-      .addRoute(_bankingRoutes(), path: '/banking')
+  var router = (shelf.router()
+      ..addRoute(publicRoute, path: '/public')
+      ..addRoute(_bankingRoutes(), path: '/banking'))
       .handler;
   
   var handler = const shelf.Stack()
@@ -37,9 +37,9 @@ shelf.Handler _bankingRoutes() {
   var transfersRoute = const shelf.Stack()
       .addHandler(_echoRequest);
 
-  var bankingRouter = shelf.router()
-      .addRoute(accountsRoute, path: '/accounts')
-      .addRoute(transfersRoute, path: '/transfers')
+  var bankingRouter = (shelf.router()
+      ..addRoute(accountsRoute, path: '/accounts')
+      ..addRoute(transfersRoute, path: '/transfers'))
       .handler;
   
   var bankingRoute = const shelf.Stack()
