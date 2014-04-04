@@ -10,10 +10,11 @@ import 'dart:convert';
 import 'package:shelf/shelf.dart';
 import 'package:unittest/unittest.dart';
 
-Request _request([Map<String, String> headers, Stream<List<int>> body]) {
+Request _request([Map<String, String> headers, Stream<List<int>> body,
+                  Map<String, Object> extraParams]) {
   if (headers == null) headers = {};
   return new Request("/", "", "GET", "", "1.1", Uri.parse('http://localhost/'),
-      headers, body: body);
+      headers, body: body, extraParams: extraParams);
 }
 
 void main() {
@@ -145,6 +146,16 @@ void main() {
       expect(_request({
         'content-type': 'text/plain; charset=iso-8859-1'
       }).encoding, equals(LATIN1));
+    });
+  });
+  
+  group("extraParams", () {
+    test("are correctly populated", () {
+      expect(_request({
+        'content-type': 'text/plain'
+      }, null, {
+        'my-param' : 42
+      }).extraParams['my-param'], equals(42));
     });
   });
 }

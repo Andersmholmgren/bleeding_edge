@@ -231,4 +231,56 @@ void main() {
       }).contentLength, equals(42));
     });
   });
+  
+  
+  group("extraParams", () {
+    test("are correctly populated in ok", () {
+      expect(new Response.ok("okay!", headers: {}, extraParams: {
+        'my-param' : 42
+      }).extraParams['my-param'], equals(42));
+    });
+
+    test("are correctly populated in forbidden", () {
+      expect(new Response.forbidden("okay!", headers: {}, extraParams: {
+        'my-param' : 42
+      }).extraParams['my-param'], equals(42));
+    });
+
+    test("are correctly populated in found", () {
+      expect(new Response.found("okay!", headers: {}, extraParams: {
+        'my-param' : 42
+      }).extraParams['my-param'], equals(42));
+    });
+
+    test("are correctly populated in internalServerError", () {
+      expect(new Response.internalServerError(headers: {}, extraParams: {
+        'my-param' : 42
+      }).extraParams['my-param'], equals(42));
+    });
+
+    test("are correctly populated in movedPermanently", () {
+      expect(new Response.movedPermanently("okay!", headers: {}, extraParams: {
+        'my-param' : 42
+      }).extraParams['my-param'], equals(42));
+    });
+
+    test("are correctly populated in notFound", () {
+      expect(new Response.notFound("okay!", headers: {}, extraParams: {
+        'my-param' : 42
+      }).extraParams['my-param'], equals(42));
+    });
+
+    test("are correctly populated in notModified", () {
+      expect(new Response.notModified(headers: {}, extraParams: {
+        'my-param' : 42
+      }).extraParams['my-param'], equals(42));
+    });
+
+    test("are correctly populated in seeOther", () {
+      expect(new Response.seeOther("other", headers: {}, extraParams: {
+        'my-param' : 42
+      }).extraParams['my-param'], equals(42));
+    });
+});
+
 }

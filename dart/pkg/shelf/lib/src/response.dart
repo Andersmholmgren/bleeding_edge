@@ -54,8 +54,10 @@ class Response extends Message {
   /// If [encoding] is passed, the "encoding" field of the Content-Type header
   /// in [headers] will be set appropriately. If there is no existing
   /// Content-Type header, it will be set to "application/octet-stream".
-  Response.ok(body, {Map<String, String> headers, Encoding encoding})
-      : this(200, body: body, headers: headers, encoding: encoding);
+  Response.ok(body, {Map<String, String> headers, Encoding encoding, 
+    Map<String, Object> extraParams})
+      : this(200, body: body, headers: headers, encoding: encoding,
+          extraParams: extraParams);
 
   /// Constructs a 301 Moved Permanently response.
   ///
@@ -72,8 +74,9 @@ class Response extends Message {
   /// in [headers] will be set appropriately. If there is no existing
   /// Content-Type header, it will be set to "application/octet-stream".
   Response.movedPermanently(location, {body, Map<String, String> headers,
-      Encoding encoding})
-      : this._redirect(301, location, body, headers, encoding);
+      Encoding encoding, Map<String, Object> extraParams})
+      : this._redirect(301, location, body, headers, encoding,
+          extraParams: extraParams);
 
   /// Constructs a 302 Found response.
   ///
@@ -90,8 +93,9 @@ class Response extends Message {
   /// in [headers] will be set appropriately. If there is no existing
   /// Content-Type header, it will be set to "application/octet-stream".
   Response.found(location, {body, Map<String, String> headers,
-      Encoding encoding})
-      : this._redirect(302, location, body, headers, encoding);
+      Encoding encoding, Map<String, Object> extraParams})
+      : this._redirect(302, location, body, headers, encoding,
+          extraParams: extraParams);
 
   /// Constructs a 303 See Other response.
   ///
@@ -109,17 +113,20 @@ class Response extends Message {
   /// in [headers] will be set appropriately. If there is no existing
   /// Content-Type header, it will be set to "application/octet-stream".
   Response.seeOther(location, {body, Map<String, String> headers,
-      Encoding encoding})
-      : this._redirect(303, location, body, headers, encoding);
+      Encoding encoding, Map<String, Object> extraParams})
+      : this._redirect(303, location, body, headers, encoding,
+          extraParams: extraParams);
 
   /// Constructs a helper constructor for redirect responses.
   Response._redirect(int statusCode, location, body,
-      Map<String, String> headers, Encoding encoding)
+      Map<String, String> headers, Encoding encoding, 
+      { Map<String, Object> extraParams })
       : this(statusCode,
             body: body,
             encoding: encoding,
             headers: _addHeader(
-                headers, 'location', _locationToString(location)));
+                headers, 'location', _locationToString(location)),
+            extraParams: extraParams);
 
   /// Constructs a 304 Not Modified response.
   ///
@@ -127,9 +134,11 @@ class Response extends Message {
   /// information used to determine whether the requested resource has changed
   /// since the last request. It indicates that the resource has not changed and
   /// the old value should be used.
-  Response.notModified({Map<String, String> headers})
+  Response.notModified({Map<String, String> headers, 
+    Map<String, Object> extraParams})
       : this(304, headers: _addHeader(
-            headers, 'date', formatHttpDate(new DateTime.now())));
+            headers, 'date', formatHttpDate(new DateTime.now())),
+            extraParams: extraParams);
 
   /// Constructs a 403 Forbidden response.
   ///
@@ -144,8 +153,9 @@ class Response extends Message {
   /// in [headers] will be set appropriately. If there is no existing
   /// Content-Type header, it will be set to "application/octet-stream".
   Response.forbidden(body, {Map<String, String> headers,
-      Encoding encoding})
-      : this(403, body: body, headers: headers);
+      Encoding encoding, Map<String, Object> extraParams})
+      : this(403, body: body, headers: headers,
+          extraParams: extraParams);
 
   /// Constructs a 404 Not Found response.
   ///
@@ -160,8 +170,10 @@ class Response extends Message {
   /// If [encoding] is passed, the "encoding" field of the Content-Type header
   /// in [headers] will be set appropriately. If there is no existing
   /// Content-Type header, it will be set to "application/octet-stream".
-  Response.notFound(body, {Map<String, String> headers, Encoding encoding})
-      : this(404, body: body, headers: headers);
+  Response.notFound(body, {Map<String, String> headers, Encoding encoding, 
+    Map<String, Object> extraParams})
+      : this(404, body: body, headers: headers,
+          extraParams: extraParams);
 
   /// Constructs a 500 Internal Server Error response.
   ///
@@ -177,10 +189,11 @@ class Response extends Message {
   /// in [headers] will be set appropriately. If there is no existing
   /// Content-Type header, it will be set to "application/octet-stream".
   Response.internalServerError({body, Map<String, String> headers,
-      Encoding encoding})
+      Encoding encoding, Map<String, Object> extraParams})
       : this(500,
             headers: body == null ? _adjust500Headers(headers) : headers,
-            body: body == null ? 'Internal Server Error' : body);
+            body: body == null ? 'Internal Server Error' : body,
+            extraParams: extraParams);
 
   /// Constructs an HTTP response with the given [statusCode].
   ///
@@ -195,9 +208,12 @@ class Response extends Message {
   /// in [headers] will be set appropriately. If there is no existing
   /// Content-Type header, it will be set to "application/octet-stream".
   Response(this.statusCode, {body, Map<String, String> headers,
-      Encoding encoding})
+      Encoding encoding,
+      Map<String, Object> extraParams})
       : super(_adjustHeaders(headers, encoding),
-          _bodyToStream(body, encoding)) {
+          _bodyToStream(body, encoding), 
+          new UnmodifiableMapView(new Map.from(
+              extraParams != null ? extraParams: {}))) {
     if (statusCode < 100) {
       throw new ArgumentError("Invalid status code: $statusCode.");
     }
