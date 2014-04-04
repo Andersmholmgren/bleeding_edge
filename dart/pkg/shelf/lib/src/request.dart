@@ -73,7 +73,8 @@ class Request extends Message {
       : this.queryString = queryString == null ? '' : queryString,
         super(new pc.UnmodifiableMapView(new HashMap.from(headers)),
             body == null ? new Stream.fromIterable([]) : body,
-            extraParams) { // TODO: make unmodifiable map view
+            new pc.UnmodifiableMapView(new HashMap.from(
+                extraParams != null ? extraParams: {}))) {
     if (method.isEmpty) throw new ArgumentError('method cannot be empty.');
 
     if (scriptName.isNotEmpty && !scriptName.startsWith('/')) {
